@@ -1,0 +1,5 @@
+echo "Running pre-push checks..."
+
+npm-run-all --parallel lint:check check:deps
+
+echo "Pre-push checks passed. Pushing to remote..."
