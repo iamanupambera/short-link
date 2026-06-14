@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { Seeder } from 'typeorm-extension';
 import { DataSource } from 'typeorm';
 import { User, UserRole } from '../../modules/auth/entities/user.entity';

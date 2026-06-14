@@ -1,6 +1,6 @@
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { ValidationPipe, RequestMethod } from '@nestjs/common';
+import { ValidationPipe, RequestMethod, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
@@ -74,4 +74,6 @@ async function bootstrap() {
   await app.listen(port);
 }
 
-bootstrap().catch(console.error);
+bootstrap().catch((err) => {
+  new Logger('Bootstrap').error(err);
+});
