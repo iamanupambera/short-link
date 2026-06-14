@@ -11,7 +11,7 @@ export class ConfigsService {
     return {
       type: 'mysql',
       host: process.env.DB_HOST,
-      port: parseInt(process.env.DB_PORT || '3306'),
+      port: parseInt(process.env.DB_PORT || ''),
       username: process.env.DB_USERNAME,
       password: process.env.DB_PASSWORD,
       database: process.env.DB,
@@ -20,7 +20,7 @@ export class ConfigsService {
       migrations: ['dist/database/migrations/*js'],
       seeds: ['dist/database/seeds/*js'],
       ssl: process.env.DB_SSL === 'true',
-      logging: false,
+      logging: process.env.DB_LOGGING === 'true',
       synchronize: process.env.DB_SYNCHRONIZE === 'true',
     };
   }

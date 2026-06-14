@@ -1,3 +1,5 @@
+import { UserRole } from 'src/modules/auth/entities/user.entity';
+
 export interface Response<ResponseType = Array<object> | object | undefined> {
   statusCode: number;
   response?: ResponseType;
@@ -46,4 +48,5 @@ export interface OrderModifier {
 export interface AuthUserInterface {
   email: string;
   userId: number;
+  role: UserRole;
 }

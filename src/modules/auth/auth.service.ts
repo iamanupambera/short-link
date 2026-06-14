@@ -10,23 +10,26 @@ import { AuthUserInterface, Response as ApiResponse } from 'src/common/interface
 import { UserRegisterDto } from './dto/user-register.dto';
 import { UserLoginDto } from './dto/user-login.dto';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import { ResendVerificationEmailDto } from './dto/resend-verification-email.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
-import { User } from './entities/user.entity';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { User, UserStatus } from './entities/user.entity';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AuthRepository } from './repository/auth.repository';
 import { EmailService } from '../email/email.service';
 import { type StorageService } from '../storage/interfaces/storage-service.interface';
-import { OtpRepository } from './repository/otp.repository';
-import { generateOTP } from 'src/common/utils/generateOTP';
+import { OtpService } from './otp.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly authRepository: AuthRepository,
-    private readonly otpRepository: OtpRepository,
+    private readonly otpService: OtpService,
     private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
     @Inject('EMAIL_SERVICE') private readonly emailService: EmailService,
     @Inject('STORAGE_SERVICE') private readonly storageService: StorageService,
   ) {}
@@ -42,15 +45,12 @@ export class AuthService {
 
     const user = await this.authRepository.createUser(dto);
 
-    // create otp and send to email for verification
-    const otp = await this.otpRepository.save({
-      otp: generateOTP(6),
-      email: dto.email,
-    });
+    // create otp in Redis and send to email for verification
+    const otp = await this.otpService.createOtp(dto.email);
 
     await this.emailService.sendVerificationMessage({
       receiverId: user.email,
-      otp: otp.otp,
+      otp,
       name: user.name,
     });
 
@@ -66,6 +66,7 @@ export class AuthService {
       where: {
         email,
       },
+      relations: ['password'],
     });
 
     if (!user) {
@@ -76,6 +77,10 @@ export class AuthService {
       throw new UnauthorizedException('Email not verified');
     }
 
+    if (user.status === UserStatus.INACTIVE) {
+      throw new UnauthorizedException('Your account has been deactivated');
+    }
+
     if (!(await user?.password?.validatePassword(password))) {
       throw new UnauthorizedException('Invalid credential');
     }
@@ -83,23 +88,31 @@ export class AuthService {
     const tokenPayload: AuthUserInterface = {
       email: user.email,
       userId: user.id,
+      role: user.role,
     };
 
-    const accessToken = this.jwtService.sign(tokenPayload, { expiresIn: '1d' });
-    const refreshToken = this.jwtService.sign(tokenPayload);
+    const accessToken = this.jwtService.sign(tokenPayload, {
+      expiresIn: this.configService.getOrThrow('ACCESS_TOKEN_EXPIRY'),
+    });
+    const refreshToken = this.jwtService.sign(tokenPayload, {
+      expiresIn: this.configService.getOrThrow('REFRESH_TOKEN_EXPIRY'),
+    });
 
-    // TODO change this in production
     res.cookie('refresh-token', refreshToken, {
       httpOnly: true,
       secure: true,
       sameSite: 'lax',
     });
 
+    // Exclude password relation from response
+    const userResponse = { ...user } as Record<string, unknown>;
+    delete userResponse.password;
+
     return {
       statusCode: 201,
       response: {
         accessToken,
-        user: { ...user, password: undefined },
+        user: userResponse,
       },
       message: 'Login successful',
     };
@@ -114,15 +127,12 @@ export class AuthService {
       throw new NotFoundException("User with this email doesn't exist");
     }
 
-    // create otp and send to email for verification
-    const otp = await this.otpRepository.save({
-      email,
-      otp: generateOTP(6),
-    });
+    // create otp in Redis and send to email for verification
+    const otp = await this.otpService.createOtp(email);
 
     await this.emailService.sendVerificationMessage({
       receiverId: user.email,
-      otp: otp.otp,
+      otp,
       name: user.name,
     });
 
@@ -134,11 +144,9 @@ export class AuthService {
   }
 
   async verifyEmail({ email, otp }: VerifyEmailDto): Promise<ApiResponse> {
-    const otpDetails = await this.otpRepository.findOne({
-      where: { email, otp },
-    });
+    const isValid = await this.otpService.verifyOtp(email, otp);
 
-    if (!otpDetails) {
+    if (!isValid) {
       throw new BadRequestException(
         "Woops! We couldn't verify your email. Please check the OTP and try again.",
       );
@@ -190,10 +198,15 @@ export class AuthService {
     const tokenPayload: AuthUserInterface = {
       email: user.email,
       userId: user.id,
+      role: user.role,
     };
 
-    const accessToken = this.jwtService.sign(tokenPayload, { expiresIn: '1d' });
-    const refreshToken = this.jwtService.sign(tokenPayload);
+    const accessToken = this.jwtService.sign(tokenPayload, {
+      expiresIn: this.configService.getOrThrow('ACCESS_TOKEN_EXPIRY'),
+    });
+    const refreshToken = this.jwtService.sign(tokenPayload, {
+      expiresIn: this.configService.getOrThrow('REFRESH_TOKEN_EXPIRY'),
+    });
 
     res.cookie('refresh-token', refreshToken, {
       httpOnly: true,
@@ -261,10 +274,63 @@ export class AuthService {
       profilePicture: url,
     });
 
+    // Return fresh user data after update
+    loginUser.profilePicture = url;
+
     return {
       statusCode: 200,
       response: loginUser,
       message: 'Update profile picture successfully',
+    };
+  }
+
+  async forgotPassword({ email }: ForgotPasswordDto): Promise<ApiResponse> {
+    const user = await this.authRepository.findOne({
+      where: { email },
+    });
+
+    if (!user) {
+      throw new NotFoundException("User with this email doesn't exist");
+    }
+
+    const otp = await this.otpService.createOtp(email, 'reset_otp:');
+
+    await this.emailService.sendResetPasswordOtp({
+      receiverId: email,
+      otp,
+      name: user.name,
+    });
+
+    return {
+      statusCode: 200,
+      response: {},
+      message: 'Password reset OTP sent successfully',
+    };
+  }
+
+  async resetPassword({ email, otp, password }: ResetPasswordDto): Promise<ApiResponse> {
+    const isValid = await this.otpService.verifyOtp(email, otp, 'reset_otp:');
+
+    if (!isValid) {
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    const user = await this.authRepository.findOne({
+      where: { email },
+      relations: ['password'],
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    user.password.password = password;
+    await this.authRepository.manager.save(user.password);
+
+    return {
+      statusCode: 200,
+      response: {},
+      message: 'Password reset successfully',
     };
   }
 }

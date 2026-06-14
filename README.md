@@ -41,12 +41,12 @@ npm run start:dev
 npm run start:prod
 ```
 
-## Migrtaion
+## Migrations
 
 Anytime model changes are made run
 
 ```bash
-model_name=<YOUR-DB-CHANGE-NAME> npm run migration:run`. This will generate a file with all DB changes, you need to ommit all other changes you dont want from the migration file.
+model_name=<YOUR-DB-CHANGE-NAME> npm run migration:run`. This will generate a file with all DB changes, you need to omit all other changes you don't want from the migration file.
 ```
 
 Create an empty migration

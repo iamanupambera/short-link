@@ -2,10 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import renderEmail from './renderEmail';
 import { MailerService } from '@nestjs-modules/mailer';
 import { ConfigService } from '@nestjs/config';
-import { MessagingService } from './messaging.service';
 
 @Injectable()
-export class EmailService implements MessagingService {
+export class EmailService {
   private readonly logger = new Logger(EmailService.name, { timestamp: true });
 
   constructor(
@@ -39,11 +38,9 @@ export class EmailService implements MessagingService {
   async sendResetPasswordOtp(data: {
     receiverId: string;
     otp: string;
-    language: string;
     name: string;
   }): Promise<boolean> {
     const html = await renderEmail('ResetPasswordOtp', {
-      language: data.language,
       otp: data.otp,
       apiUrl: this.configService.getOrThrow('API_URL'),
       name: data.name,
@@ -67,11 +64,9 @@ export class EmailService implements MessagingService {
     receiverId: string;
     password: string;
     role: string;
-    language: string;
     name: string;
   }): Promise<boolean> {
     const html = await renderEmail('WelcomeMail', {
-      language: data.language,
       password: data.password,
       role: data.role,
       apiUrl: this.configService.getOrThrow('API_URL'),

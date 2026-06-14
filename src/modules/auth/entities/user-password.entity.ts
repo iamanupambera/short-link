@@ -5,6 +5,7 @@ import {
   OneToOne,
   JoinColumn,
   BeforeInsert,
+  BeforeUpdate,
 } from 'typeorm';
 import { User } from './user.entity';
 import { compare, hash } from 'bcrypt';
@@ -26,8 +27,12 @@ export class UserPassword {
   user: User;
 
   @BeforeInsert()
-  async hashPasswordBeforeInsert() {
-    this.password = await hash(this.password, 8);
+  @BeforeUpdate()
+  async hashPasswordBeforeSave() {
+    if (this.password && !this.password.startsWith('$2b$') && !this.password.startsWith('$2a$')) {
+      const saltRounds = parseInt(process.env.BCRYPT_SALT_ROUNDS || '12', 10);
+      this.password = await hash(this.password, saltRounds);
+    }
   }
 
   async validatePassword(password: string) {

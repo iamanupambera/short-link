@@ -6,11 +6,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './jwt.strategy';
 import { AuthRepository } from './repository/auth.repository';
-import { OtpRepository } from './repository/otp.repository';
+import { OtpService } from './otp.service';
 import { EmailModule } from '../email/email.module';
 import { StorageModule } from '../storage/storage.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './entities/user.entity';
+import { RedisModule } from '../redis/redis.module';
 
 @Module({
   imports: [
@@ -25,8 +26,10 @@ import { User } from './entities/user.entity';
     PassportModule,
     EmailModule,
     StorageModule,
+    RedisModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthRepository, JwtStrategy, OtpRepository],
+  providers: [AuthService, AuthRepository, JwtStrategy, OtpService],
+  exports: [AuthRepository, TypeOrmModule],
 })
 export class AuthModule {}

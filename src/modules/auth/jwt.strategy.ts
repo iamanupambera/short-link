@@ -1,5 +1,5 @@
 import { Repository } from 'typeorm';
-import { User } from './entities/user.entity';
+import { User, UserStatus } from './entities/user.entity';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ExtractJwt, Strategy } from 'passport-jwt';
@@ -29,13 +29,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new ForbiddenException('Access Denied');
     }
 
-    if (user.email !== email || !user.isEmailVerified) {
+    if (user.email !== email || !user.isEmailVerified || user.status === UserStatus.INACTIVE) {
       throw new ForbiddenException('Access Denied');
     }
 
     return {
       userId,
       email,
+      role: user.role,
     };
   }
 }

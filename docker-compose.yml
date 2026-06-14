@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: shortlink_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: short_link
+      MYSQL_USER: user
+      MYSQL_PASSWORD: userpassword
+    ports:
+      - '3306:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  redis:
+    image: redis:alpine
+    container_name: shortlink_redis
+    restart: always
+    command: redis-server --requirepass redispassword
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+
+  app:
+    build: .
+    container_name: shortlink_app
+    restart: always
+    ports:
+      - '3000:3000'
+    depends_on:
+      - mysql
+      - redis
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - CLIENT_URL=http://localhost:3001
+      - API_URL=http://localhost:3000
+      - ACCESS_TOKEN_SECRET=some_jwt_secret_token_123456!!!
+      - ACCESS_TOKEN_EXPIRY=1d
+      - REFRESH_TOKEN_EXPIRY=30d
+      - BCRYPT_SALT_ROUNDS=12
+      - OTP_EXPIRY_SECONDS=300
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USERNAME=user
+      - DB_PASSWORD=userpassword
+      - DB=short_link
+      - DB_SYNCHRONIZE=true
+      - DB_LOGGING=false
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=redispassword
+      - REDIS_DB=0
+      - IP_SALT_SECRET=shortlinkipsaltsecretkeys123
+      - MAIL_DRIVER=smtp
+      - MAIL_HOST=smtp.gmail.com
+      - MAIL_PORT=587
+      - MAIL_USER=youremail@gmail.com
+      - MAIL_PASSWORD=app_password
+      - MAIL_ENCRYPTION=tls
+      - MAIL_FROM=no_reply@short-link.com
+      - MAIL_FROM_NAME=ShortLink
+
+volumes:
+  mysql_data:
+  redis_data:

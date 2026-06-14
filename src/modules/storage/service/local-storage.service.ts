@@ -50,11 +50,8 @@ export class LocalStorageService implements StorageService {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  async getSignedUrl(
-    filePath: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    expiresInSeconds: number,
-  ): Promise<string> {
+  async getSignedUrl(filePath: string, expiresInSeconds: number): Promise<string> {
+    this.logger.debug(`getSignedUrl called for path: ${filePath}, expiry: ${expiresInSeconds}s`);
     return this.getPublicUrl(filePath); // No signing needed for local
   }
 

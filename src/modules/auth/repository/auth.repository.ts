@@ -11,9 +11,10 @@ export class AuthRepository extends Repository<User> {
   }
 
   async createUser(
-    data: Pick<User, 'name' | 'email'> & {
-      password: string;
-    },
+    data: Pick<User, 'name' | 'email'> &
+      Partial<Pick<User, 'role' | 'isEmailVerified'>> & {
+        password: string;
+      },
   ) {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -24,6 +25,8 @@ export class AuthRepository extends Repository<User> {
       const user = queryRunner.manager.create(User, {
         name: data.name,
         email: data.email,
+        role: data.role,
+        isEmailVerified: data.isEmailVerified,
       });
       const savedUser = await queryRunner.manager.save(user);
 
@@ -45,10 +48,7 @@ export class AuthRepository extends Repository<User> {
   }
 
   async findByEmail(email: string, relations: Relation[]) {
-    const qb = this.createQueryBuilder('user').addSelect([
-      'user.password',
-      'user.refreshTokenHash',
-    ]);
+    const qb = this.createQueryBuilder('user');
 
     relations.forEach((f) => {
       if (f.select && f.condition && f.parameters) {
@@ -66,10 +66,7 @@ export class AuthRepository extends Repository<User> {
   }
 
   async findById(userId: number, relations: Relation[], filters: FilterModifier[]) {
-    const qb = this.createQueryBuilder('user').addSelect([
-      'user.password',
-      'user.refreshTokenHash',
-    ]);
+    const qb = this.createQueryBuilder('user');
 
     relations.forEach((f) => {
       if (f.select && f.condition && f.parameters) {
@@ -117,15 +114,11 @@ export class AuthRepository extends Repository<User> {
     if (search) {
       qb.where(
         new Brackets((qb) => {
-          qb.where(`CONCAT(user.firstName, ' ', user.lastName) LIKE :search`, {
+          qb.where('user.name LIKE :search', {
             search: `%${search}%`,
-          })
-            .orWhere('user.email like :search', {
-              search: `%${search}%`,
-            })
-            .orWhere('user.phone like :search', {
-              search: `%${search}%`,
-            });
+          }).orWhere('user.email LIKE :search', {
+            search: `%${search}%`,
+          });
         }),
       );
       append = true;

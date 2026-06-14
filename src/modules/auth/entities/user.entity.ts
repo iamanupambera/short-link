@@ -9,6 +9,17 @@ import {
 } from 'typeorm';
 import { UserPassword } from './user-password.entity';
 
+export enum UserRole {
+  USER = 'USER',
+  ADMIN = 'ADMIN',
+  SUPER_ADMIN = 'SUPER_ADMIN',
+}
+
+export enum UserStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+}
+
 @Entity({ name: 'user' })
 export class User {
   @PrimaryGeneratedColumn()
@@ -28,6 +39,20 @@ export class User {
 
   @Column({ default: false })
   isEmailVerified: boolean;
+
+  @Column({
+    type: 'varchar',
+    length: 50,
+    default: UserRole.USER,
+  })
+  role: UserRole;
+
+  @Column({
+    type: 'varchar',
+    length: 50,
+    default: UserStatus.ACTIVE,
+  })
+  status: UserStatus;
 
   @OneToOne(() => UserPassword, (password) => password.user)
   password: UserPassword;
