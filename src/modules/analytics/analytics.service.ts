@@ -49,10 +49,9 @@ export class AnalyticsService {
    * Get aggregated dashboard statistics for all links of a user.
    */
   async getDashboardAnalytics(userId: number) {
-    // Get all links for the user
-    const [links] = await this.linkRepository.findAndCountAll(userId, 1, 1000);
+    const totalLinks = await this.linkRepository.count({ where: { userId } });
 
-    if (links.length === 0) {
+    if (totalLinks === 0) {
       return {
         totalLinks: 0,
         totalClicks: 0,
@@ -62,34 +61,25 @@ export class AnalyticsService {
       };
     }
 
-    const linkIds = links.map((l) => l.id);
-
     // Total clicks across all user's links
-    const totalClicks = await this.clickRepository.countClicksForLinkIds(linkIds);
+    const totalClicks = await this.clickRepository.countClicksForUserLinks(userId);
 
     // Unique visitors across all user's links
-    const uniqueVisitors = await this.clickRepository.countUniqueVisitorsForLinkIds(linkIds);
+    const uniqueVisitors = await this.clickRepository.countUniqueVisitorsForUserLinks(userId);
 
     // Clicks over time (grouped by day, last 7 days)
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const clicksOverTime = await this.clickRepository.getClicksOverTime(linkIds, sevenDaysAgo);
+    const clicksOverTime = await this.clickRepository.getClicksOverTimeForUserLinks(
+      userId,
+      sevenDaysAgo,
+    );
 
     // Top links (by click count)
-    const topLinksRaw = await this.clickRepository.getTopLinks(linkIds, 5);
-
-    const topLinks = topLinksRaw.map((tl) => {
-      const link = links.find((l) => l.id === tl.linkId);
-      return {
-        linkId: tl.linkId,
-        shortCode: link?.shortCode || '',
-        originalUrl: link?.originalUrl || '',
-        clicks: tl.count,
-      };
-    });
+    const topLinks = await this.clickRepository.getTopLinksForUser(userId, 5);
 
     return {
-      totalLinks: links.length,
+      totalLinks,
       totalClicks,
       uniqueVisitors,
       clicksOverTime,

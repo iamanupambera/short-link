@@ -1,20 +1,10 @@
-import { Controller, Get, Param, Query, Req, Res, Inject } from '@nestjs/common';
-import Redis from 'ioredis';
-import { REDIS_CLIENT } from '../redis/redis.constants';
-import { QueueService } from '../redis/queue.service';
-import { Link, LinkStatus } from '../links/entities/link.entity';
+import { Controller, Get, Param, Query, Req, Res } from '@nestjs/common';
 import { type Request, type Response } from 'express';
-import { compare } from 'bcrypt';
-import { LinksRepository } from '../links/repository/links.repository';
+import { RedirectService } from './redirect.service';
 
 @Controller()
 export class RedirectController {
-  constructor(
-    private readonly linkRepository: LinksRepository,
-    @Inject(REDIS_CLIENT)
-    private readonly redis: Redis,
-    private readonly queueService: QueueService,
-  ) {}
+  constructor(private readonly redirectService: RedirectService) {}
 
   @Get(':shortCode')
   async handleRedirect(
@@ -23,107 +13,24 @@ export class RedirectController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const cacheKey = `short:${shortCode}`;
-    let linkData: Partial<Link> | null = null;
+    const result = await this.redirectService.resolveRedirect(shortCode, passwordQuery, req);
 
-    // 1. Try Cache Lookup
-    const cached = await this.redis.get(cacheKey);
-    if (cached) {
-      try {
-        linkData = JSON.parse(cached) as Partial<Link>;
-      } catch {
-        linkData = null;
-      }
+    if (result.type === 'redirect') {
+      return res.redirect(302, result.url || '');
     }
 
-    // 2. Try DB Lookup if not cached
-    if (!linkData) {
-      const link = await this.linkRepository.findLinkByCode(shortCode);
-
-      if (!link) {
-        return this.renderErrorPage(
-          res,
-          'Link Not Found',
-          'The link you are trying to access does not exist or has been deleted.',
-          404,
-        );
-      }
-
-      linkData = {
-        id: link.id,
-        userId: link.userId,
-        shortCode: link.shortCode,
-        originalUrl: link.originalUrl,
-        customAlias: link.customAlias,
-        passwordHash: link.passwordHash,
-        expiresAt: link.expiresAt ? link.expiresAt : null,
-        status: link.status,
-      };
-
-      // Cache it for 24 hours
-      await this.redis.set(cacheKey, JSON.stringify(linkData), 'EX', 86400);
+    if (result.type === 'password_prompt') {
+      return this.renderPasswordPrompt(res, result.isRetry || false);
     }
 
-    // 3. Validate Link Status
-    if (linkData?.status === LinkStatus.INACTIVE) {
+    if (result.type === 'error') {
       return this.renderErrorPage(
         res,
-        'Link Inactive',
-        'This short link is currently inactive.',
-        403,
+        result.errorTitle || 'Error',
+        result.errorDescription || 'An error occurred.',
+        result.statusCode || 500,
       );
     }
-
-    // 4. Validate Expiration
-    if (linkData?.expiresAt) {
-      const expiry = new Date(linkData.expiresAt);
-      if (expiry.getTime() < Date.now()) {
-        return this.renderErrorPage(res, 'Link Expired', 'This short link has expired.', 410);
-      }
-    }
-
-    // 5. Validate Password Protection
-    if (linkData?.passwordHash) {
-      if (!passwordQuery) {
-        return this.renderPasswordPrompt(res, false);
-      }
-
-      const isPasswordCorrect = await compare(passwordQuery, linkData.passwordHash);
-      if (!isPasswordCorrect) {
-        return this.renderPasswordPrompt(res, true);
-      }
-    }
-
-    // 6. Queue Click Analytics Event Asynchronously
-    // Retrieve IP (taking into account proxies)
-    const xForwardedFor = req.headers['x-forwarded-for'];
-    const ip =
-      (Array.isArray(xForwardedFor) ? xForwardedFor[0] : xForwardedFor) ||
-      req.socket.remoteAddress ||
-      '127.0.0.1';
-    const cleanIp = ip.split(',')[0].trim();
-
-    const cfIpCountry = req.headers['cf-ipcountry'];
-    const xCountryCode = req.headers['x-country-code'];
-    const country =
-      (Array.isArray(cfIpCountry) ? cfIpCountry[0] : cfIpCountry) ||
-      (Array.isArray(xCountryCode) ? xCountryCode[0] : xCountryCode) ||
-      '';
-
-    const clickEvent = {
-      linkId: linkData?.id,
-      ip: cleanIp,
-      userAgent: req.headers['user-agent'] || '',
-      referrer: req.headers['referer'] || '',
-      country,
-      timestamp: new Date().toISOString(),
-    };
-
-    // Push click details to Redis queue
-    await this.queueService.push('analytics_clicks_queue', clickEvent);
-
-    // 7. Perform Redirect
-    return res.redirect(302, linkData?.originalUrl || '');
   }
 
   /**

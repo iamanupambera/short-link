@@ -49,4 +49,5 @@ export interface AuthUserInterface {
   email: string;
   userId: number;
   role: UserRole;
+  sessionKey: string;
 }

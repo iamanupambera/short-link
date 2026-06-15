@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -22,6 +23,9 @@ import { AuthRepository } from './repository/auth.repository';
 import { EmailService } from '../email/email.service';
 import { type StorageService } from '../storage/interfaces/storage-service.interface';
 import { OtpService } from './otp.service';
+import Redis from 'ioredis';
+import { REDIS_CLIENT } from '../redis/redis.constants';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -32,7 +36,31 @@ export class AuthService {
     private readonly configService: ConfigService,
     @Inject('EMAIL_SERVICE') private readonly emailService: EmailService,
     @Inject('STORAGE_SERVICE') private readonly storageService: StorageService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
+
+  private readonly logger = new Logger(AuthService.name);
+
+  private parseDurationToSeconds(duration: string): number {
+    const match = duration.trim().match(/^(\d+)([smhd])$/);
+    if (!match) {
+      return 30 * 24 * 60 * 60; // 30 days default
+    }
+    const value = parseInt(match[1], 10);
+    const unit = match[2];
+    switch (unit) {
+      case 's':
+        return value;
+      case 'm':
+        return value * 60;
+      case 'h':
+        return value * 60 * 60;
+      case 'd':
+        return value * 60 * 60 * 24;
+      default:
+        return 30 * 24 * 60 * 60;
+    }
+  }
 
   async register(dto: UserRegisterDto): Promise<ApiResponse<User>> {
     const emailExist = await this.authRepository.findOne({
@@ -85,10 +113,13 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credential');
     }
 
+    const sessionKey = `${user.id}_${crypto.randomUUID()}`;
+
     const tokenPayload: AuthUserInterface = {
       email: user.email,
       userId: user.id,
       role: user.role,
+      sessionKey,
     };
 
     const accessToken = this.jwtService.sign(tokenPayload, {
@@ -97,6 +128,11 @@ export class AuthService {
     const refreshToken = this.jwtService.sign(tokenPayload, {
       expiresIn: this.configService.getOrThrow('REFRESH_TOKEN_EXPIRY'),
     });
+
+    // Store sessionKey in Redis
+    const expiryStr = this.configService.getOrThrow<string>('REFRESH_TOKEN_EXPIRY');
+    const ttlSeconds = this.parseDurationToSeconds(expiryStr);
+    await this.redis.set(`session:${sessionKey}`, 'active', 'EX', ttlSeconds);
 
     res.cookie('refresh-token', refreshToken, {
       httpOnly: true,
@@ -187,6 +223,18 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or missing refresh token.');
     }
 
+    if (!data.sessionKey) {
+      throw new UnauthorizedException('Invalid or missing refresh token.');
+    }
+
+    const sessionExists = await this.redis.get(`session:${data.sessionKey}`);
+    if (!sessionExists) {
+      throw new UnauthorizedException('Invalid or missing refresh token.');
+    }
+
+    // Delete old session (rotation)
+    await this.redis.del(`session:${data.sessionKey}`);
+
     const user = await this.authRepository.findOne({
       where: { email: data.email },
     });
@@ -195,10 +243,13 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
+    const newSessionKey = `${user.id}_${crypto.randomUUID()}`;
+
     const tokenPayload: AuthUserInterface = {
       email: user.email,
       userId: user.id,
       role: user.role,
+      sessionKey: newSessionKey,
     };
 
     const accessToken = this.jwtService.sign(tokenPayload, {
@@ -207,6 +258,11 @@ export class AuthService {
     const refreshToken = this.jwtService.sign(tokenPayload, {
       expiresIn: this.configService.getOrThrow('REFRESH_TOKEN_EXPIRY'),
     });
+
+    // Store new sessionKey in Redis
+    const expiryStr = this.configService.getOrThrow<string>('REFRESH_TOKEN_EXPIRY');
+    const ttlSeconds = this.parseDurationToSeconds(expiryStr);
+    await this.redis.set(`session:${newSessionKey}`, 'active', 'EX', ttlSeconds);
 
     res.cookie('refresh-token', refreshToken, {
       httpOnly: true,
@@ -234,10 +290,22 @@ export class AuthService {
     };
   }
 
-  logout(res: Response) {
+  async logout(res: Response, token?: string) {
+    if (token) {
+      try {
+        const data = this.jwtService.verify<AuthUserInterface>(token);
+        if (data.sessionKey) {
+          await this.redis.del(`session:${data.sessionKey}`);
+        }
+      } catch (error) {
+        this.logger.error('Error logging out:', error);
+      }
+    }
+
     res.clearCookie('refresh-token', {
       httpOnly: true,
       secure: true,
+      sameSite: 'lax',
     });
 
     return {

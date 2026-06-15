@@ -38,11 +38,27 @@ export class ClicksRepository extends Repository<Click> {
     return qb.getCount();
   }
 
+  async countClicksForUserLinks(userId: number): Promise<number> {
+    const qb = this.createQueryBuilder('click')
+      .innerJoin('click.link', 'link')
+      .where('link.userId = :userId', { userId });
+    return qb.getCount();
+  }
+
   async countUniqueVisitorsForLinkIds(linkIds: number[]): Promise<number> {
     if (linkIds.length === 0) return 0;
     const qb = this.createQueryBuilder('click')
       .select('COUNT(DISTINCT(click.ipHash))', 'count')
       .where('click.linkId IN (:...linkIds)', { linkIds });
+    const result = await qb.getRawOne<{ count?: string }>();
+    return parseInt(result?.count || '0', 10);
+  }
+
+  async countUniqueVisitorsForUserLinks(userId: number): Promise<number> {
+    const qb = this.createQueryBuilder('click')
+      .select('COUNT(DISTINCT(click.ipHash))', 'count')
+      .innerJoin('click.link', 'link')
+      .where('link.userId = :userId', { userId });
     const result = await qb.getRawOne<{ count?: string }>();
     return parseInt(result?.count || '0', 10);
   }
@@ -57,6 +73,26 @@ export class ClicksRepository extends Repository<Click> {
       .select("DATE_FORMAT(click.createdAt, '%Y-%m-%d')", 'date')
       .addSelect('COUNT(*)', 'count')
       .where('click.linkId IN (:...linkIds)', { linkIds })
+      .andWhere('click.createdAt >= :sevenDaysAgo', { sevenDaysAgo })
+      .groupBy("DATE_FORMAT(click.createdAt, '%Y-%m-%d')")
+      .orderBy('date', 'ASC');
+
+    const result = await qb.getRawMany<{ date: string; count: string }>();
+    return result.map((r) => ({
+      date: r.date,
+      count: parseInt(r.count, 10),
+    }));
+  }
+
+  async getClicksOverTimeForUserLinks(
+    userId: number,
+    sevenDaysAgo: Date,
+  ): Promise<{ date: string; count: number }[]> {
+    const qb = this.createQueryBuilder('click')
+      .select("DATE_FORMAT(click.createdAt, '%Y-%m-%d')", 'date')
+      .addSelect('COUNT(*)', 'count')
+      .innerJoin('click.link', 'link')
+      .where('link.userId = :userId', { userId })
       .andWhere('click.createdAt >= :sevenDaysAgo', { sevenDaysAgo })
       .groupBy("DATE_FORMAT(click.createdAt, '%Y-%m-%d')")
       .orderBy('date', 'ASC');
@@ -86,6 +122,38 @@ export class ClicksRepository extends Repository<Click> {
     return result.map((r) => ({
       linkId: parseInt(r.linkId, 10),
       count: parseInt(r.count, 10),
+    }));
+  }
+
+  async getTopLinksForUser(
+    userId: number,
+    limit: number = 5,
+  ): Promise<{ linkId: number; shortCode: string; originalUrl: string; clicks: number }[]> {
+    const qb = this.createQueryBuilder('click')
+      .select('click.linkId', 'linkId')
+      .addSelect('link.shortCode', 'shortCode')
+      .addSelect('link.originalUrl', 'originalUrl')
+      .addSelect('COUNT(*)', 'clicks')
+      .innerJoin('click.link', 'link')
+      .where('link.userId = :userId', { userId })
+      .groupBy('click.linkId')
+      .addGroupBy('link.shortCode')
+      .addGroupBy('link.originalUrl')
+      .orderBy('clicks', 'DESC')
+      .limit(limit);
+
+    const result = await qb.getRawMany<{
+      linkId: string;
+      shortCode: string;
+      originalUrl: string;
+      clicks: string;
+    }>();
+
+    return result.map((r) => ({
+      linkId: parseInt(r.linkId, 10),
+      shortCode: r.shortCode,
+      originalUrl: r.originalUrl,
+      clicks: parseInt(r.clicks, 10),
     }));
   }
 

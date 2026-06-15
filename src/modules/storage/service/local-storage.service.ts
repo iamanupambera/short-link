@@ -6,7 +6,7 @@ import {
   FileMetadata,
 } from '../interfaces/storage-service.interface';
 import fs from 'fs/promises';
-import { v4 as uuidv4 } from 'uuid';
+import * as crypto from 'crypto';
 import { basename, extname, join, relative, resolve } from 'path';
 import { ConfigService } from '@nestjs/config';
 
@@ -21,7 +21,7 @@ export class LocalStorageService implements StorageService {
     file: Express.Multer.File,
     options?: UploadOptions,
   ): Promise<UploadedFileMetadata> {
-    const fileId = uuidv4();
+    const fileId = crypto.randomUUID();
     const filename = fileId + extname(file.originalname);
     const subPath = options?.path ?? '';
     const destFolder = join(this.uploadRoot, subPath);

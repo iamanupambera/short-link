@@ -1,4 +1,12 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { isIP } from 'net';
+import { randomInt } from 'crypto';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../redis/redis.constants';
 import { Link, LinkStatus } from './entities/link.entity';
@@ -22,6 +30,7 @@ export class LinksService {
    * Create a shortened link.
    */
   async createLink(dto: CreateLinkDto, userId: number): Promise<Link> {
+    this.validateDestinationUrl(dto.originalUrl);
     let shortCode = '';
 
     if (dto.customAlias) {
@@ -52,7 +61,7 @@ export class LinksService {
 
     const expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
 
-    const link = this.linkRepository.create({
+    const savedLink = await this.saveLinkWithCollisionRetry({
       userId,
       originalUrl: dto.originalUrl,
       shortCode,
@@ -61,8 +70,6 @@ export class LinksService {
       expiresAt,
       status: LinkStatus.ACTIVE,
     });
-
-    const savedLink = await this.linkRepository.save(link);
 
     // Cache the short URL details in Redis for 24 Hours
     await this.cacheLink(savedLink);
@@ -120,6 +127,7 @@ export class LinksService {
     const oldShortCode = link.shortCode;
 
     if (dto.originalUrl) {
+      this.validateDestinationUrl(dto.originalUrl);
       link.originalUrl = dto.originalUrl;
     }
 
@@ -168,7 +176,15 @@ export class LinksService {
       link.status = dto.status;
     }
 
-    const updatedLink = await this.linkRepository.save(link);
+    let updatedLink: Link;
+    try {
+      updatedLink = await this.linkRepository.save(link);
+    } catch (error) {
+      if (this.isDuplicateKeyError(error)) {
+        throw new ConflictException('Short code or custom alias is already in use');
+      }
+      throw error;
+    }
 
     // Evict old cache
     await this.redis.del(`short:${oldShortCode}`);
@@ -224,7 +240,7 @@ export class LinksService {
       attempts++;
       code = '';
       for (let i = 0; i < 6; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
+        code += chars.charAt(randomInt(chars.length));
       }
 
       // Check conflict in DB or cache
@@ -238,10 +254,90 @@ export class LinksService {
     }
 
     if (!isUnique) {
-      // Fallback with timestamp hashing to guarantee uniqueness
-      code = Date.now().toString(36).slice(-6);
+      code = '';
+      for (let i = 0; i < 8; i++) {
+        code += chars.charAt(randomInt(chars.length));
+      }
     }
 
     return code;
+  }
+
+  private async saveLinkWithCollisionRetry(data: Partial<Link>): Promise<Link> {
+    const maxAttempts = data.customAlias ? 1 : 5;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const link = this.linkRepository.create({
+        ...data,
+        shortCode: attempt === 0 ? data.shortCode : await this.generateUniqueShortCode(),
+      });
+
+      try {
+        return await this.linkRepository.save(link);
+      } catch (error) {
+        if (!this.isDuplicateKeyError(error)) {
+          throw error;
+        }
+
+        if (data.customAlias || attempt === maxAttempts - 1) {
+          throw new ConflictException('Short code or custom alias is already in use');
+        }
+      }
+    }
+
+    throw new ConflictException('Unable to generate a unique short code');
+  }
+
+  private validateDestinationUrl(value: string): void {
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      throw new BadRequestException('Original URL is invalid');
+    }
+
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      throw new BadRequestException('Original URL must use http or https');
+    }
+
+    const hostname = url.hostname.toLowerCase();
+    if (
+      hostname === 'localhost' ||
+      hostname === 'localhost.localdomain' ||
+      hostname.endsWith('.localhost') ||
+      this.isPrivateIp(hostname)
+    ) {
+      throw new BadRequestException('Original URL cannot target a local or private address');
+    }
+  }
+
+  private isPrivateIp(hostname: string): boolean {
+    if (!isIP(hostname)) {
+      return false;
+    }
+
+    if (hostname === '127.0.0.1' || hostname === '::1' || hostname === '0.0.0.0') {
+      return true;
+    }
+
+    if (hostname.startsWith('10.') || hostname.startsWith('192.168.')) {
+      return true;
+    }
+
+    const parts = hostname.split('.').map(Number);
+    if (parts.length === 4) {
+      const [first, second] = parts;
+      return first === 172 && second >= 16 && second <= 31;
+    }
+
+    const normalized = hostname.replace(/^\[|\]$/g, '');
+    return (
+      normalized.startsWith('fc') || normalized.startsWith('fd') || normalized.startsWith('fe80:')
+    );
+  }
+
+  private isDuplicateKeyError(error: unknown): boolean {
+    const maybeError = error as { code?: string; errno?: number };
+    return maybeError.code === 'ER_DUP_ENTRY' || maybeError.errno === 1062;
   }
 }

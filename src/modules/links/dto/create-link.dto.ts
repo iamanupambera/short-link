@@ -7,7 +7,7 @@ export class CreateLinkDto {
     example: 'https://github.com/iamanupambera/short-link',
   })
   @IsNotEmpty()
-  @IsUrl()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   readonly originalUrl: string;
 
   @ApiProperty({

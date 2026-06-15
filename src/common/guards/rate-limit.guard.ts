@@ -16,11 +16,14 @@ export class RateLimitGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req: Request = context.switchToHttp().getRequest();
+    const controllerName = context.getClass().name;
+    const isRedirect = controllerName === 'RedirectController';
+    const limit = isRedirect ? 3000 : 100;
 
     // 1. Determine client identifier (user ID or IP)
     let key = '';
     if (req.user && req.user.userId) {
-      key = `rate_limit:user:${req.user.userId}`;
+      key = `rate_limit:${isRedirect ? 'redirect' : 'api'}:user:${req.user.userId}`;
     } else {
       const xForwardedFor = req.headers['x-forwarded-for'];
       const ip =
@@ -28,7 +31,7 @@ export class RateLimitGuard implements CanActivate {
         req.socket.remoteAddress ||
         '127.0.0.1';
       const cleanIp = ip.split(',')[0].trim();
-      key = `rate_limit:ip:${cleanIp}`;
+      key = `rate_limit:${isRedirect ? 'redirect' : 'api'}:ip:${cleanIp}`;
     }
 
     // 2. Atomic increment & TTL check in Redis
@@ -49,8 +52,8 @@ export class RateLimitGuard implements CanActivate {
       await this.redis.expire(key, 60);
     }
 
-    // 3. Throttle check (100 requests per minute)
-    if (count > 100) {
+    // 3. Throttle check
+    if (count > limit) {
       throw new HttpException(
         {
           statusCode: HttpStatus.TOO_MANY_REQUESTS,

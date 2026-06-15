@@ -147,8 +147,11 @@ export class AuthController {
     description: 'Allows an user to logout.',
   })
   @ApiResponse({ status: 200, description: 'Successfully logged out.' })
-  logout(@Res({ passthrough: true }) res: Response) {
-    return this.authService.logout(res);
+  logout(
+    @Res({ passthrough: true }) res: Response,
+    @Cookies('refresh-token') refreshToken: string,
+  ) {
+    return this.authService.logout(res, refreshToken);
   }
 
   @Post('change-profile-picture')

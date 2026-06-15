@@ -9,38 +9,43 @@ import helmet from 'helmet';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const configService = app.get(ConfigService);
+  const nodeEnv = configService.get<string>('NODE_ENV')?.toLowerCase();
 
   // Application setup
   app.enableShutdownHooks();
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
     }),
   );
   app.setGlobalPrefix('api/v1', {
     exclude: [{ path: ':shortCode', method: RequestMethod.GET }],
   });
 
-  // Swagger configuration
-  const config = new DocumentBuilder()
-    .setTitle('SHORT LINK API')
-    .setDescription('SHORT LINK API')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .addCookieAuth()
-    .addTag('PATS')
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api-docs', app, document, {
-    jsonDocumentUrl: 'api-docs/json',
-    swaggerOptions: {
-      persistAuthorization: true,
-      withCredentials: true,
-    },
-  });
+  if (nodeEnv !== 'production') {
+    // Swagger configuration
+    const config = new DocumentBuilder()
+      .setTitle('SHORT LINK API')
+      .setDescription('SHORT LINK API')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .addCookieAuth()
+      .addTag('PATS')
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api-docs', app, document, {
+      jsonDocumentUrl: 'api-docs/json',
+      swaggerOptions: {
+        persistAuthorization: true,
+        withCredentials: true,
+      },
+    });
+  }
 
   // port setup
-  const configService = app.get(ConfigService);
   const port = configService.getOrThrow<number>('PORT');
 
   // CORS setup

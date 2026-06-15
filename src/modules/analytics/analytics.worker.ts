@@ -12,6 +12,7 @@ export class AnalyticsWorker implements OnApplicationBootstrap, OnApplicationShu
   private isRunning = false;
   private loopTimeout: NodeJS.Timeout | null = null;
   private ipSalt = '';
+  private readonly batchSize: number;
 
   constructor(
     private readonly clickRepository: ClicksRepository,
@@ -19,6 +20,7 @@ export class AnalyticsWorker implements OnApplicationBootstrap, OnApplicationShu
     private readonly configService: ConfigService,
   ) {
     this.ipSalt = this.configService.getOrThrow<string>('IP_SALT_SECRET');
+    this.batchSize = parseInt(this.configService.get<string>('ANALYTICS_BATCH_SIZE') || '100', 10);
   }
 
   onApplicationBootstrap() {
@@ -39,11 +41,14 @@ export class AnalyticsWorker implements OnApplicationBootstrap, OnApplicationShu
     if (!this.isRunning) return;
 
     try {
-      const event = await this.queueService.pop<ClickEvent>('analytics_clicks_queue');
+      const events = await this.queueService.popBatch<ClickEvent>(
+        'analytics_clicks_queue',
+        this.batchSize,
+      );
 
-      if (event) {
-        await this.processClickEvent(event);
-        // If we processed an event, run immediately for the next one
+      if (events.length > 0) {
+        await this.processClickEvents(events);
+        // If we processed events, run immediately for the next batch
         this.loopTimeout = setTimeout(() => {
           void this.processLoop();
         }, 0);
@@ -62,7 +67,12 @@ export class AnalyticsWorker implements OnApplicationBootstrap, OnApplicationShu
     }
   }
 
-  private async processClickEvent(event: {
+  private async processClickEvents(events: ClickEvent[]) {
+    const clicks = events.map((event) => this.buildClickEntity(event));
+    await this.clickRepository.save(clicks, { chunk: 100 });
+  }
+
+  private buildClickEntity(event: {
     linkId: number;
     ip: string;
     userAgent: string;
@@ -111,8 +121,7 @@ export class AnalyticsWorker implements OnApplicationBootstrap, OnApplicationShu
       }
     }
 
-    // 5. Store to database
-    const click = this.clickRepository.create({
+    return this.clickRepository.create({
       linkId,
       ipHash,
       country,
@@ -121,7 +130,5 @@ export class AnalyticsWorker implements OnApplicationBootstrap, OnApplicationShu
       referrer: cleanReferrer,
       createdAt: new Date(timestamp),
     });
-
-    await this.clickRepository.save(click);
   }
 }
