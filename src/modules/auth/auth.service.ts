@@ -26,6 +26,7 @@ import { OtpService } from './otp.service';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../redis/redis.constants';
 import * as crypto from 'crypto';
+import { validateUploadedFile } from 'src/common/utils/file-validation.util';
 
 @Injectable()
 export class AuthService {
@@ -134,9 +135,10 @@ export class AuthService {
     const ttlSeconds = this.parseDurationToSeconds(expiryStr);
     await this.redis.set(`session:${sessionKey}`, 'active', 'EX', ttlSeconds);
 
+    const isProduction = this.configService.get<string>('NODE_ENV')?.toUpperCase() === 'PRODUCTION';
     res.cookie('refresh-token', refreshToken, {
       httpOnly: true,
-      secure: true,
+      secure: isProduction,
       sameSite: 'lax',
     });
 
@@ -160,17 +162,17 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new NotFoundException("User with this email doesn't exist");
+      this.logger.warn(`Resend verification requested for non-existent email: ${email}`);
+    } else {
+      // create otp in Redis and send to email for verification
+      const otp = await this.otpService.createOtp(email);
+
+      await this.emailService.sendVerificationMessage({
+        receiverId: user.email,
+        otp,
+        name: user.name,
+      });
     }
-
-    // create otp in Redis and send to email for verification
-    const otp = await this.otpService.createOtp(email);
-
-    await this.emailService.sendVerificationMessage({
-      receiverId: user.email,
-      otp,
-      name: user.name,
-    });
 
     return {
       statusCode: 200,
@@ -264,9 +266,10 @@ export class AuthService {
     const ttlSeconds = this.parseDurationToSeconds(expiryStr);
     await this.redis.set(`session:${newSessionKey}`, 'active', 'EX', ttlSeconds);
 
+    const isProduction = this.configService.get<string>('NODE_ENV')?.toUpperCase() === 'PRODUCTION';
     res.cookie('refresh-token', refreshToken, {
       httpOnly: true,
-      secure: true,
+      secure: isProduction,
       sameSite: 'lax',
     });
 
@@ -302,9 +305,10 @@ export class AuthService {
       }
     }
 
+    const isProduction = this.configService.get<string>('NODE_ENV')?.toUpperCase() === 'PRODUCTION';
     res.clearCookie('refresh-token', {
       httpOnly: true,
-      secure: true,
+      secure: isProduction,
       sameSite: 'lax',
     });
 
@@ -322,6 +326,11 @@ export class AuthService {
     if (!file) {
       throw new BadRequestException('No file uploaded');
     }
+    validateUploadedFile(file, {
+      maxSizeBytes: 5 * 1024 * 1024, // 5MB limit
+      allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+      allowedExtensions: ['.jpg', '.jpeg', '.png', '.webp', '.gif'],
+    });
     const loginUser = await this.authRepository.findById(user.userId, [], []);
 
     if (!loginUser) {
@@ -358,16 +367,16 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new NotFoundException("User with this email doesn't exist");
+      this.logger.warn(`Password reset requested for non-existent email: ${email}`);
+    } else {
+      const otp = await this.otpService.createOtp(email, 'reset_otp:');
+
+      await this.emailService.sendResetPasswordOtp({
+        receiverId: email,
+        otp,
+        name: user.name,
+      });
     }
-
-    const otp = await this.otpService.createOtp(email, 'reset_otp:');
-
-    await this.emailService.sendResetPasswordOtp({
-      receiverId: email,
-      otp,
-      name: user.name,
-    });
 
     return {
       statusCode: 200,

@@ -15,6 +15,8 @@ import { QrModule } from './modules/qr/qr.module';
 import { UserModule } from './modules/user/user.module';
 import { APP_GUARD } from '@nestjs/core';
 import { RateLimitGuard } from './common/guards/rate-limit.guard';
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
@@ -41,6 +43,10 @@ import { RateLimitGuard } from './common/guards/rate-limit.guard';
     AnalyticsModule,
     QrModule,
     UserModule,
+    PrometheusModule.register({
+      path: '/metrics',
+    }),
+    HealthModule,
   ],
   providers: [
     {

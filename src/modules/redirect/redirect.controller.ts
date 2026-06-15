@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, Req, Res } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, Req, Res } from '@nestjs/common';
 import { type Request, type Response } from 'express';
 import { RedirectService } from './redirect.service';
 
@@ -9,18 +9,20 @@ export class RedirectController {
   @Get(':shortCode')
   async handleRedirect(
     @Param('shortCode') shortCode: string,
-    @Query('password') passwordQuery: string,
+    @Query('token') tokenQuery: string,
+    @Query('retry') retryQuery: string,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const result = await this.redirectService.resolveRedirect(shortCode, passwordQuery, req);
+    const result = await this.redirectService.resolveRedirect(shortCode, tokenQuery, req);
 
     if (result.type === 'redirect') {
       return res.redirect(302, result.url || '');
     }
 
     if (result.type === 'password_prompt') {
-      return this.renderPasswordPrompt(res, result.isRetry || false);
+      const isRetry = result.isRetry || retryQuery === 'true';
+      return this.renderPasswordPrompt(res, shortCode, isRetry);
     }
 
     if (result.type === 'error') {
@@ -33,10 +35,23 @@ export class RedirectController {
     }
   }
 
+  @Post(':shortCode/unlock')
+  async handleUnlock(
+    @Param('shortCode') shortCode: string,
+    @Body('password') passwordBody: string,
+    @Res() res: Response,
+  ) {
+    const result = await this.redirectService.unlockLink(shortCode, passwordBody);
+    if (result && result.token) {
+      return res.redirect(302, `/${shortCode}?token=${result.token}`);
+    }
+    return res.redirect(302, `/${shortCode}?retry=true`);
+  }
+
   /**
    * Serve a glassmorphic password entry page if link is protected.
    */
-  private renderPasswordPrompt(res: Response, isRetry: boolean) {
+  private renderPasswordPrompt(res: Response, shortCode: string, isRetry: boolean) {
     const errorHtml = isRetry
       ? `<div class="error-msg">Incorrect password. Please try again.</div>`
       : '';
@@ -181,7 +196,7 @@ export class RedirectController {
           
           ${errorHtml}
           
-          <form action="" method="GET">
+          <form action="/${shortCode}/unlock" method="POST">
             <div class="form-group">
               <input type="password" name="password" placeholder="Enter password" autofocus required>
             </div>

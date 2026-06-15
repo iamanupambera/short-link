@@ -6,6 +6,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { type Request } from 'express';
 import { compare } from 'bcrypt';
 import Redis from 'ioredis';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class RedirectService {
@@ -16,7 +17,7 @@ export class RedirectService {
     private readonly queueService: QueueService,
   ) {}
 
-  async resolveRedirect(shortCode: string, passwordQuery: string, req: Request) {
+  async resolveRedirect(shortCode: string, unlockToken: string | undefined, req: Request) {
     const cacheKey = `short:${shortCode}`;
     let linkData: Partial<Link> | null = null;
 
@@ -83,20 +84,24 @@ export class RedirectService {
 
     // 5. Validate Password Protection
     if (linkData?.passwordHash) {
-      if (!passwordQuery) {
+      if (!unlockToken) {
         return {
           type: 'password_prompt',
           isRetry: false,
         };
       }
 
-      const isPasswordCorrect = await compare(passwordQuery, linkData.passwordHash);
-      if (!isPasswordCorrect) {
+      const tokenKey = `unlock:${shortCode}:${unlockToken}`;
+      const tokenValid = await this.redis.get(tokenKey);
+      if (!tokenValid) {
         return {
           type: 'password_prompt',
           isRetry: true,
         };
       }
+
+      // Single-use token: delete immediately
+      await this.redis.del(tokenKey);
     }
 
     // 6. Queue Click Analytics Event Asynchronously
@@ -132,5 +137,62 @@ export class RedirectService {
       type: 'redirect',
       url: linkData?.originalUrl || '',
     };
+  }
+
+  async unlockLink(shortCode: string, password?: string): Promise<{ token: string } | null> {
+    if (!password) {
+      return null;
+    }
+
+    const cacheKey = `short:${shortCode}`;
+    let linkData: Partial<Link> | null = null;
+
+    // 1. Try Cache Lookup
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      try {
+        linkData = JSON.parse(cached) as Partial<Link>;
+      } catch {
+        linkData = null;
+      }
+    }
+
+    // 2. Try DB Lookup if not cached
+    if (!linkData) {
+      const link = await this.linkRepository.findLinkByCode(shortCode);
+      if (!link) {
+        return null;
+      }
+
+      linkData = {
+        id: link.id,
+        userId: link.userId,
+        shortCode: link.shortCode,
+        originalUrl: link.originalUrl,
+        customAlias: link.customAlias,
+        passwordHash: link.passwordHash,
+        expiresAt: link.expiresAt ? link.expiresAt : null,
+        status: link.status,
+      };
+
+      // Cache it for 24 hours
+      await this.redis.set(cacheKey, JSON.stringify(linkData), 'EX', 86400);
+    }
+
+    if (!linkData.passwordHash) {
+      return null;
+    }
+
+    const isPasswordCorrect = await compare(password, linkData.passwordHash);
+    if (!isPasswordCorrect) {
+      return null;
+    }
+
+    const unlockToken = crypto.randomUUID();
+    const tokenKey = `unlock:${shortCode}:${unlockToken}`;
+    // Store in Redis with 60 seconds TTL
+    await this.redis.set(tokenKey, 'valid', 'EX', 60);
+
+    return { token: unlockToken };
   }
 }
