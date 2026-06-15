@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/require-await */
 import { Test, TestingModule } from '@nestjs/testing';
 import { RedirectService } from './redirect.service';
 import { LinksRepository } from '../links/repository/links.repository';
@@ -144,7 +143,7 @@ describe('RedirectService', () => {
         status: LinkStatus.ACTIVE,
         passwordHash: 'hashedpassword',
       };
-      redis.get.mockImplementation(async (key: string) => {
+      redis.get.mockImplementation((key: string) => {
         if (key === 'short:abc') return JSON.stringify(cachedLink);
         return null;
       });
@@ -165,7 +164,7 @@ describe('RedirectService', () => {
         status: LinkStatus.ACTIVE,
         passwordHash: 'hashedpassword',
       };
-      redis.get.mockImplementation(async (key: string) => {
+      redis.get.mockImplementation((key: string) => {
         if (key === 'short:abc') return JSON.stringify(cachedLink);
         if (key === 'unlock:abc:validtoken') return 'valid';
         return null;
