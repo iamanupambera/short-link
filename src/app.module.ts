@@ -39,7 +39,6 @@ import { HealthModule } from './modules/health/health.module';
     RedisModule,
     AuthModule,
     LinksModule,
-    RedirectModule,
     AnalyticsModule,
     QrModule,
     UserModule,
@@ -47,6 +46,7 @@ import { HealthModule } from './modules/health/health.module';
       path: '/metrics',
     }),
     HealthModule,
+    RedirectModule,
   ],
   providers: [
     {

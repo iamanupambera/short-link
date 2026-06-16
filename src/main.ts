@@ -33,6 +33,7 @@ async function bootstrap() {
   );
   app.setGlobalPrefix('api/v1', {
     exclude: [
+      { path: ':shortCode/unlock', method: RequestMethod.POST },
       { path: ':shortCode', method: RequestMethod.GET },
       { path: 'metrics', method: RequestMethod.GET },
       { path: 'health', method: RequestMethod.GET },
