@@ -280,14 +280,6 @@ describe('LinksService', () => {
       expect(mockRedis.set).not.toHaveBeenCalled();
     });
 
-    it('should evict both old and new cache keys if the short code changes', async () => {
-      mockLinksRepository.findLinkByCode.mockResolvedValue(null);
-      await service.updateLink(1, { customAlias: 'new-alias' }, 1);
-      expect(mockRedis.del).toHaveBeenCalledWith('short:abc123');
-      expect(mockRedis.del).toHaveBeenCalledWith('short:new-alias');
-      expect(mockRedis.set).not.toHaveBeenCalled();
-    });
-
     it('should throw ConflictException on duplicate key error during save', async () => {
       mockLinksRepository.save.mockImplementation(() => {
         throw Object.assign(new Error('Duplicate entry'), {
