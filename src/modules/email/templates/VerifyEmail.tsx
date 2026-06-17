@@ -1,14 +1,12 @@
 import { emailStyles } from './styles';
 
 export function VerifyEmail({
-  email,
   otp,
-  clientUrl,
   name,
   apiUrl,
 }: {
   otp: string;
-  clientUrl: string;
+  clientUrl?: string;
   email: string;
   apiUrl: string;
   name: string;
@@ -26,20 +24,23 @@ export function VerifyEmail({
             <td>
               <div style={emailStyles.card}>
                 <h3 style={emailStyles.heading}>Verify Your Email</h3>
+
+                <p style={emailStyles.otpCode}>
+                  {otp.split('').map((digit, index) => (
+                    <span key={index} style={emailStyles.otpDigit}>
+                      {digit}
+                    </span>
+                  ))}
+                </p>
+
                 <p style={emailStyles.paragraph}>Hi {name},</p>
                 <p style={emailStyles.paragraph}>
                   Thank you for signing up! To complete your registration and verify your email
-                  address, please click the button below.
+                  address, please use the OTP code above in the verification form.
                 </p>
                 <p style={emailStyles.paragraph}>
                   If you did not create an account with us, you can safely ignore this email.
                 </p>
-                <a
-                  href={`${clientUrl}/verify-otp/${otp}/${encodeURIComponent(email)}`}
-                  style={emailStyles.button}
-                >
-                  Verify Email
-                </a>
                 <p style={emailStyles.footer}>&copy; {new Date().getFullYear()} SHORT LINK</p>
               </div>
             </td>

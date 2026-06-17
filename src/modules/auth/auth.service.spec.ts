@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthRepository } from './repository/auth.repository';
-import { OtpService } from './otp.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { REDIS_CLIENT } from '../redis/redis.constants';
@@ -22,11 +21,6 @@ const mockAuthRepository = {
   manager: { save: jest.fn() },
 };
 
-const mockOtpService = {
-  createOtp: jest.fn(),
-  verifyOtp: jest.fn(),
-};
-
 const mockJwtService = {
   sign: jest.fn().mockReturnValue('mock.jwt.token'),
   verify: jest.fn(),
@@ -36,6 +30,7 @@ const configMap: Record<string, string> = {
   ACCESS_TOKEN_EXPIRY: '1h',
   REFRESH_TOKEN_EXPIRY: '30d',
   NODE_ENV: 'DEVELOPMENT',
+  OTP_EXPIRY_SECONDS: '300',
 };
 
 const mockConfigService = {
@@ -66,7 +61,6 @@ describe('AuthService', () => {
       providers: [
         AuthService,
         { provide: AuthRepository, useValue: mockAuthRepository },
-        { provide: OtpService, useValue: mockOtpService },
         { provide: JwtService, useValue: mockJwtService },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: 'EMAIL_SERVICE', useValue: mockEmailService },
@@ -89,7 +83,6 @@ describe('AuthService', () => {
         role: UserRole.USER,
       };
       mockAuthRepository.createUser.mockResolvedValue(savedUser);
-      mockOtpService.createOtp.mockResolvedValue('123456');
 
       const result = await service.register({
         name: 'Test',
@@ -181,7 +174,7 @@ describe('AuthService', () => {
       mockAuthRepository.findOne.mockResolvedValue(null);
       const result = await service.resendVerificationEmail({ email: 'nope@test.com' });
       expect(result.statusCode).toBe(200);
-      expect(mockOtpService.createOtp).not.toHaveBeenCalled();
+      expect(mockRedis.set).not.toHaveBeenCalled();
     });
 
     it('should send OTP when user exists', async () => {
@@ -189,29 +182,80 @@ describe('AuthService', () => {
         email: 'user@test.com',
         name: 'User',
       });
-      mockOtpService.createOtp.mockResolvedValue('123456');
       const result = await service.resendVerificationEmail({ email: 'user@test.com' });
       expect(result.statusCode).toBe(200);
+      expect(mockRedis.set).toHaveBeenCalled();
       expect(mockEmailService.sendVerificationMessage).toHaveBeenCalled();
     });
   });
 
   describe('verifyEmail', () => {
-    it('should verify email and update user', async () => {
-      mockOtpService.verifyOtp.mockResolvedValue(true);
-      const result = await service.verifyEmail({ email: 'test@test.com', otp: '123456' });
-      expect(result.statusCode).toBe(200);
+    const mockRes = {
+      cookie: jest.fn(),
+    } as unknown as Response;
+
+    const mockUser = {
+      id: 1,
+      name: 'Test',
+      email: 'test@test.com',
+      role: UserRole.USER,
+      isEmailVerified: false,
+    };
+
+    it('should verify email, update user, generate tokens, create session, and set cookie successfully', async () => {
+      mockRedis.get.mockResolvedValue('123456');
+      mockAuthRepository.update.mockResolvedValue({ affected: 1 });
+      mockAuthRepository.findOne.mockResolvedValue(mockUser);
+
+      const result = await service.verifyEmail({ email: 'test@test.com', otp: '123456' }, mockRes);
+
+      expect(mockRedis.get).toHaveBeenCalledWith('otp:test@test.com');
+      expect(mockRedis.del).toHaveBeenCalledWith('otp:test@test.com');
       expect(mockAuthRepository.update).toHaveBeenCalledWith(
         { email: 'test@test.com' },
         { isEmailVerified: true },
       );
+      expect(mockAuthRepository.findOne).toHaveBeenCalledWith({
+        where: { email: 'test@test.com' },
+      });
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        expect.stringMatching(/^session:1_/),
+        'active',
+        'EX',
+        expect.any(Number),
+      );
+      expect(mockRes.cookie).toHaveBeenCalledWith(
+        'refresh-token',
+        'mock.jwt.token',
+        expect.objectContaining({
+          httpOnly: true,
+          secure: false,
+        }),
+      );
+
+      expect(result.statusCode).toBe(200);
+      expect(result.response).toEqual({
+        accessToken: 'mock.jwt.token',
+        user: mockUser,
+      });
     });
 
     it('should throw BadRequestException when OTP is invalid', async () => {
-      mockOtpService.verifyOtp.mockResolvedValue(false);
-      await expect(service.verifyEmail({ email: 'test@test.com', otp: 'wrong' })).rejects.toThrow(
-        BadRequestException,
-      );
+      mockRedis.get.mockResolvedValue(null);
+
+      await expect(
+        service.verifyEmail({ email: 'test@test.com', otp: 'wrong' }, mockRes),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockAuthRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when user not found after OTP verification', async () => {
+      mockRedis.get.mockResolvedValue('123456');
+      mockAuthRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.verifyEmail({ email: 'test@test.com', otp: '123456' }, mockRes),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -397,7 +441,7 @@ describe('AuthService', () => {
       mockAuthRepository.findOne.mockResolvedValue(null);
       const result = await service.forgotPassword({ email: 'nope@test.com' });
       expect(result.statusCode).toBe(200);
-      expect(mockOtpService.createOtp).not.toHaveBeenCalled();
+      expect(mockRedis.set).not.toHaveBeenCalled();
     });
 
     it('should send reset OTP when user exists', async () => {
@@ -405,16 +449,16 @@ describe('AuthService', () => {
         email: 'user@test.com',
         name: 'User',
       });
-      mockOtpService.createOtp.mockResolvedValue('654321');
       const result = await service.forgotPassword({ email: 'user@test.com' });
       expect(result.statusCode).toBe(200);
+      expect(mockRedis.set).toHaveBeenCalled();
       expect(mockEmailService.sendResetPasswordOtp).toHaveBeenCalled();
     });
   });
 
   describe('resetPassword', () => {
     it('should reset password when OTP is valid', async () => {
-      mockOtpService.verifyOtp.mockResolvedValue(true);
+      mockRedis.get.mockResolvedValue('123456');
       mockAuthRepository.findOne.mockResolvedValue({
         email: 'test@test.com',
         password: { password: 'old' },
@@ -430,7 +474,7 @@ describe('AuthService', () => {
     });
 
     it('should throw BadRequestException when OTP is invalid', async () => {
-      mockOtpService.verifyOtp.mockResolvedValue(false);
+      mockRedis.get.mockResolvedValue(null);
       await expect(
         service.resetPassword({
           email: 'test@test.com',
@@ -441,7 +485,7 @@ describe('AuthService', () => {
     });
 
     it('should throw NotFoundException when user not found after OTP verification', async () => {
-      mockOtpService.verifyOtp.mockResolvedValue(true);
+      mockRedis.get.mockResolvedValue('123456');
       mockAuthRepository.findOne.mockResolvedValue(null);
       await expect(
         service.resetPassword({

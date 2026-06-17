@@ -59,9 +59,10 @@ describe('AuthController', () => {
 
   it('verifyEmail should delegate to authService', async () => {
     const dto = { email: 'test@test.com', otp: '123456' };
+    const res = {} as Response;
     const expected = { statusCode: 200, response: {}, message: '' };
     mockAuthService.verifyEmail.mockResolvedValue(expected);
-    expect(await controller.verifyEmail(dto)).toBe(expected);
+    expect(await controller.verifyEmail(dto, res)).toBe(expected);
   });
 
   it('getMe should delegate to authService', async () => {

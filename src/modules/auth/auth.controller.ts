@@ -86,8 +86,8 @@ export class AuthController {
   @ApiOperation({ summary: 'Verify user email with OTP' })
   @ApiResponse({ status: 200, description: 'Email verified successfully' })
   @ApiResponse({ status: 400, description: 'Invalid OTP or email' })
-  verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
-    return this.authService.verifyEmail(verifyEmailDto);
+  verifyEmail(@Body() verifyEmailDto: VerifyEmailDto, @Res({ passthrough: true }) res: Response) {
+    return this.authService.verifyEmail(verifyEmailDto, res);
   }
 
   @Get('get-me')

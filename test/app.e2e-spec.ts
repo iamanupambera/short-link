@@ -249,9 +249,16 @@ describe('HTTP API (e2e)', () => {
       statusCode: 200,
       message: 'Successfully send verification mail',
     });
-    authService.verifyEmail.mockResolvedValue({
-      statusCode: 200,
-      message: 'Email verified successfully',
+    authService.verifyEmail.mockImplementation((_dto, res: Response) => {
+      res.cookie('refresh-token', 'refresh-token-value');
+      return {
+        statusCode: 200,
+        message: 'Email verified successfully',
+        response: {
+          accessToken: 'access-token-value',
+          user: { id: 1, email: 'user@example.com' },
+        },
+      };
     });
     authService.getMe.mockResolvedValue({
       statusCode: 200,
@@ -436,10 +443,16 @@ describe('HTTP API (e2e)', () => {
         .post('/api/v1/auth/resend-verification-mail')
         .send({ email: 'user@example.com' })
         .expect(200);
-      await request(app.getHttpServer())
+      const verifyResponse = await request(app.getHttpServer())
         .post('/api/v1/auth/verify-mail')
         .send({ email: 'user@example.com', otp: '123456' })
         .expect(200);
+
+      expect(verifyResponse.headers['set-cookie']).toEqual(
+        expect.arrayContaining([expect.stringContaining('refresh-token=refresh-token-value')]),
+      );
+      expect(verifyResponse.body.response.accessToken).toBe('access-token-value');
+      expect(verifyResponse.body.response.user).toEqual({ id: 1, email: 'user@example.com' });
       await request(app.getHttpServer())
         .post('/api/v1/auth/forgot-password')
         .send({ email: 'user@example.com' })

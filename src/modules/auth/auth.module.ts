@@ -6,7 +6,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './jwt.strategy';
 import { AuthRepository } from './repository/auth.repository';
-import { OtpService } from './otp.service';
 import { EmailModule } from '../email/email.module';
 import { StorageModule } from '../storage/storage.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -29,7 +28,7 @@ import { RedisModule } from '../redis/redis.module';
     RedisModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthRepository, JwtStrategy, OtpService],
+  providers: [AuthService, AuthRepository, JwtStrategy],
   exports: [AuthRepository, TypeOrmModule],
 })
 export class AuthModule {}
