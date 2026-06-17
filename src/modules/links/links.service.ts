@@ -71,9 +71,6 @@ export class LinksService {
       status: LinkStatus.ACTIVE,
     });
 
-    // Cache the short URL details in Redis for 24 Hours
-    await this.cacheLink(savedLink);
-
     return savedLink;
   }
 
@@ -131,41 +128,34 @@ export class LinksService {
       link.originalUrl = dto.originalUrl;
     }
 
-    if (dto.customAlias !== undefined) {
-      if (dto.customAlias) {
-        const cleanAlias = dto.customAlias.trim();
-        if (!/^[a-zA-Z0-9-_]+$/.test(cleanAlias)) {
-          throw new ConflictException('Custom alias contains invalid characters');
-        }
+    if (dto.customAlias) {
+      const cleanAlias = dto.customAlias.trim();
+      if (!/^[a-zA-Z0-9-_]+$/.test(cleanAlias)) {
+        throw new ConflictException('Custom alias contains invalid characters');
+      }
 
-        // Check conflict with other links
-        const conflict = await this.linkRepository.findLinkByCode(cleanAlias);
+      // Check conflict with other links
+      const conflict = await this.linkRepository.findLinkByCode(cleanAlias);
 
-        if (conflict && conflict.id !== link.id) {
-          throw new ConflictException('Custom alias is already in use');
-        }
+      if (conflict && conflict.id !== link.id) {
+        throw new ConflictException('Custom alias is already in use');
+      }
 
-        link.customAlias = cleanAlias;
-        link.shortCode = cleanAlias;
-      } else {
-        // Clearing custom alias means generating a new random code
-        if (link.customAlias) {
-          link.customAlias = null;
-          link.shortCode = await this.generateUniqueShortCode();
-        }
+      link.customAlias = cleanAlias;
+      link.shortCode = cleanAlias;
+    } else {
+      // Clearing custom alias means generating a new random code
+      if (link.customAlias) {
+        link.customAlias = null;
+        link.shortCode = await this.generateUniqueShortCode();
       }
     }
 
-    if (dto.password !== undefined) {
-      if (dto.password) {
-        const saltRounds = parseInt(
-          this.configService.getOrThrow<string>('BCRYPT_SALT_ROUNDS'),
-          10,
-        );
-        link.passwordHash = await hash(dto.password, saltRounds);
-      } else {
-        link.passwordHash = null;
-      }
+    if (dto.password) {
+      const saltRounds = parseInt(this.configService.getOrThrow<string>('BCRYPT_SALT_ROUNDS'), 10);
+      link.passwordHash = await hash(dto.password, saltRounds);
+    } else {
+      link.passwordHash = null;
     }
 
     if (dto.expiresAt !== undefined) {
@@ -176,6 +166,9 @@ export class LinksService {
       link.status = dto.status;
     }
 
+    // Evict old cache
+    await this.redis.del(`short:${oldShortCode}`);
+
     let updatedLink: Link;
     try {
       updatedLink = await this.linkRepository.save(link);
@@ -185,12 +178,6 @@ export class LinksService {
       }
       throw error;
     }
-
-    // Evict old cache
-    await this.redis.del(`short:${oldShortCode}`);
-
-    // Cache updated link
-    await this.cacheLink(updatedLink);
 
     return updatedLink;
   }

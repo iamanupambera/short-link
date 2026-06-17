@@ -15,21 +15,11 @@ import { CreateLinkDto } from './dto/create-link.dto';
 import { UpdateLinkDto } from './dto/update-link.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { AuthUser } from 'src/common/decorator/auth-user.decorator';
-import {
-  type AuthUserInterface,
-  Response as ApiResponse,
-  type FilterModifier,
-} from 'src/common/interfaces';
+import { type AuthUserInterface, IResponse, type FilterModifier } from 'src/common/interfaces';
 import { FiltersGuard } from 'src/common/guards/filters.guard';
 import { LinkStatusFilter } from 'src/common/filters/linkStatusFilter';
 import { Filter } from 'src/common/decorator/filter.decorator';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiQuery,
-  ApiResponse as SwaggerResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { LinkStatus } from './entities/link.entity';
 
 @ApiTags('Links')
@@ -41,11 +31,11 @@ export class LinksController {
 
   @Post()
   @ApiOperation({ summary: 'Create a shortened link' })
-  @SwaggerResponse({ status: 201, description: 'Short link created successfully.' })
+  @ApiResponse({ status: 201, description: 'Short link created successfully.' })
   async create(
     @Body() createLinkDto: CreateLinkDto,
     @AuthUser() user: AuthUserInterface,
-  ): Promise<ApiResponse> {
+  ): Promise<IResponse> {
     const link = await this.linksService.createLink(createLinkDto, user.userId);
     return {
       statusCode: 201,
@@ -72,7 +62,7 @@ export class LinksController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
-  ): Promise<ApiResponse> {
+  ): Promise<IResponse> {
     const p = page ? parseInt(page, 10) : 1;
     const l = limit ? parseInt(limit, 10) : 10;
     const result = await this.linksService.getLinks(user.userId, p, l, filters, search);
@@ -88,7 +78,7 @@ export class LinksController {
   async findOne(
     @Param('id', ParseIntPipe) id: number,
     @AuthUser() user: AuthUserInterface,
-  ): Promise<ApiResponse> {
+  ): Promise<IResponse> {
     const link = await this.linksService.getLinkById(id, user.userId);
     return {
       statusCode: 200,
@@ -103,7 +93,7 @@ export class LinksController {
     @Param('id', ParseIntPipe) id: number,
     @Body() updateLinkDto: UpdateLinkDto,
     @AuthUser() user: AuthUserInterface,
-  ): Promise<ApiResponse> {
+  ): Promise<IResponse> {
     const link = await this.linksService.updateLink(id, updateLinkDto, user.userId);
     return {
       statusCode: 200,
@@ -117,7 +107,7 @@ export class LinksController {
   async remove(
     @Param('id', ParseIntPipe) id: number,
     @AuthUser() user: AuthUserInterface,
-  ): Promise<ApiResponse> {
+  ): Promise<IResponse> {
     await this.linksService.deleteLink(id, user.userId);
     return {
       statusCode: 200,

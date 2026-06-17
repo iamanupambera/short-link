@@ -20,7 +20,7 @@ import { UserRoleFilter } from 'src/common/filters/userRoleFilter';
 import { UserVerifiedFilter } from 'src/common/filters/userVerifiedFilter';
 import { Filter } from 'src/common/decorator/filter.decorator';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { FilterModifier, Response as ApiResponse } from 'src/common/interfaces';
+import { FilterModifier, IResponse } from 'src/common/interfaces';
 
 @ApiTags('Super Admin User Management')
 @Controller('admin/users')
@@ -53,7 +53,7 @@ export class UserSuperAdminController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
-  ): Promise<ApiResponse> {
+  ): Promise<IResponse> {
     const p = page ? parseInt(page, 10) : 1;
     const l = limit ? parseInt(limit, 10) : 10;
     const result = await this.userSuperAdminService.getUsers(p, l, filters, search);
@@ -66,7 +66,7 @@ export class UserSuperAdminController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get details of a specific user (Super Admin only)' })
-  async findOne(@Param('id', ParseIntPipe) id: number): Promise<ApiResponse> {
+  async findOne(@Param('id', ParseIntPipe) id: number): Promise<IResponse> {
     const user = await this.userSuperAdminService.getUserById(id);
     return {
       statusCode: 200,
@@ -81,7 +81,7 @@ export class UserSuperAdminController {
   async updateStatus(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateUserStatusDto,
-  ): Promise<ApiResponse> {
+  ): Promise<IResponse> {
     const user = await this.userSuperAdminService.updateUserStatus(id, dto.status);
     return {
       statusCode: 200,

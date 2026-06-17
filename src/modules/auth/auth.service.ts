@@ -7,7 +7,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { AuthUserInterface, Response as ApiResponse } from 'src/common/interfaces';
+import { AuthUserInterface, IResponse } from 'src/common/interfaces';
 import { UserRegisterDto } from './dto/user-register.dto';
 import { UserLoginDto } from './dto/user-login.dto';
 import { JwtService } from '@nestjs/jwt';
@@ -62,7 +62,7 @@ export class AuthService {
     }
   }
 
-  async register(dto: UserRegisterDto): Promise<ApiResponse<User>> {
+  async register(dto: UserRegisterDto): Promise<IResponse<User>> {
     const emailExist = await this.authRepository.findOne({
       where: { email: dto.email },
     });
@@ -89,7 +89,7 @@ export class AuthService {
     };
   }
 
-  async login({ email, password }: UserLoginDto, res: Response): Promise<ApiResponse> {
+  async login({ email, password }: UserLoginDto, res: Response): Promise<IResponse> {
     const user = await this.authRepository.findOne({
       where: {
         email,
@@ -155,7 +155,7 @@ export class AuthService {
     };
   }
 
-  async resendVerificationEmail({ email }: ResendVerificationEmailDto): Promise<ApiResponse> {
+  async resendVerificationEmail({ email }: ResendVerificationEmailDto): Promise<IResponse> {
     const user = await this.authRepository.findOne({
       where: { email },
     });
@@ -180,7 +180,7 @@ export class AuthService {
     };
   }
 
-  async verifyEmail({ email, otp }: VerifyEmailDto, res: Response): Promise<ApiResponse> {
+  async verifyEmail({ email, otp }: VerifyEmailDto, res: Response): Promise<IResponse> {
     const isValid = await this.verifyOtp(email, otp);
 
     if (!isValid) {
@@ -245,7 +245,7 @@ export class AuthService {
     };
   }
 
-  async getMe({ userId }: AuthUserInterface): Promise<ApiResponse<User>> {
+  async getMe({ userId }: AuthUserInterface): Promise<IResponse<User>> {
     const user = await this.authRepository.findOne({ where: { id: userId } });
 
     if (!user) {
@@ -364,7 +364,7 @@ export class AuthService {
   async updateProfilePicture(
     file: Express.Multer.File,
     user: AuthUserInterface,
-  ): Promise<ApiResponse> {
+  ): Promise<IResponse> {
     if (!file) {
       throw new BadRequestException('No file uploaded');
     }
@@ -403,7 +403,7 @@ export class AuthService {
     };
   }
 
-  async forgotPassword({ email }: ForgotPasswordDto): Promise<ApiResponse> {
+  async forgotPassword({ email }: ForgotPasswordDto): Promise<IResponse> {
     const user = await this.authRepository.findOne({
       where: { email },
     });
@@ -432,7 +432,7 @@ export class AuthService {
     };
   }
 
-  async resetPassword({ email, otp, password }: ResetPasswordDto): Promise<ApiResponse> {
+  async resetPassword({ email, otp, password }: ResetPasswordDto): Promise<IResponse> {
     const isValid = await this.verifyOtp(email, otp, 'reset_otp:');
 
     if (!isValid) {

@@ -49,11 +49,11 @@ describe('LinksService', () => {
   });
 
   describe('createLink', () => {
-    it('should create a link with auto-generated short code', async () => {
+    it('should create a link with auto-generated short code without eager caching', async () => {
       const result = await service.createLink({ originalUrl: 'https://example.com' }, 1);
       expect(result).toHaveProperty('id');
       expect(result.originalUrl).toBe('https://example.com');
-      expect(mockRedis.set).toHaveBeenCalled();
+      expect(mockRedis.set).not.toHaveBeenCalled();
     });
 
     it('should create a link with custom alias', async () => {
@@ -274,10 +274,18 @@ describe('LinksService', () => {
       expect(result.status).toBe(LinkStatus.INACTIVE);
     });
 
-    it('should evict old cache and set new cache', async () => {
+    it('should evict old cache and not set new cache (lazy caching)', async () => {
       await service.updateLink(1, { originalUrl: 'https://new.com' }, 1);
       expect(mockRedis.del).toHaveBeenCalledWith('short:abc123');
-      expect(mockRedis.set).toHaveBeenCalled();
+      expect(mockRedis.set).not.toHaveBeenCalled();
+    });
+
+    it('should evict both old and new cache keys if the short code changes', async () => {
+      mockLinksRepository.findLinkByCode.mockResolvedValue(null);
+      await service.updateLink(1, { customAlias: 'new-alias' }, 1);
+      expect(mockRedis.del).toHaveBeenCalledWith('short:abc123');
+      expect(mockRedis.del).toHaveBeenCalledWith('short:new-alias');
+      expect(mockRedis.set).not.toHaveBeenCalled();
     });
 
     it('should throw ConflictException on duplicate key error during save', async () => {

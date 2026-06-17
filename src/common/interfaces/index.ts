@@ -1,6 +1,6 @@
 import { UserRole } from 'src/modules/auth/entities/user.entity';
 
-export interface Response<ResponseType = Array<object> | object | undefined> {
+export interface IResponse<ResponseType = Array<object> | object | undefined> {
   statusCode: number;
   response?: ResponseType;
   message: string;
