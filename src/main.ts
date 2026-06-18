@@ -1,7 +1,7 @@
 import { validateEnvironment } from './common/utils/env-validation.util';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { ValidationPipe, RequestMethod, Logger } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { winstonConfig } from './config/winston.config';
 import { ConfigService } from '@nestjs/config';
 import { WinstonModule } from 'nest-winston';
@@ -31,14 +31,6 @@ async function bootstrap() {
       transform: true,
     }),
   );
-  app.setGlobalPrefix('api/v1', {
-    exclude: [
-      { path: ':shortCode/unlock', method: RequestMethod.POST },
-      { path: ':shortCode', method: RequestMethod.GET },
-      { path: 'metrics', method: RequestMethod.GET },
-      { path: 'health', method: RequestMethod.GET },
-    ],
-  });
 
   if (nodeEnv !== 'production') {
     // Swagger configuration
@@ -100,6 +92,8 @@ async function bootstrap() {
           manifestSrc: [`'self'`],
           frameSrc: [`'self'`],
           connectSrc: [`'self'`],
+          upgradeInsecureRequests: nodeEnv === 'production' ? [] : null,
+          formAction: null,
         },
       },
     }),

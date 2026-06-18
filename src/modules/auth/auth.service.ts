@@ -326,11 +326,16 @@ export class AuthService {
   }
 
   async updateUserDetails(user: AuthUserInterface, updateUserDto: UpdateUserDto) {
-    const updateUser = await this.authRepository.update({ id: user.userId }, updateUserDto);
+    await this.authRepository.update({ id: user.userId }, updateUserDto);
+    const updatedUser = await this.authRepository.findOne({ where: { id: user.userId } });
+
+    if (!updatedUser) {
+      throw new NotFoundException('User not found');
+    }
 
     return {
       statusCode: 201,
-      response: updateUser,
+      response: updatedUser,
       message: 'User details updated successfully',
     };
   }

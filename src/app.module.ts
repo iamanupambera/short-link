@@ -13,7 +13,7 @@ import { RedirectModule } from './modules/redirect/redirect.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { QrModule } from './modules/qr/qr.module';
 import { UserModule } from './modules/user/user.module';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, RouterModule } from '@nestjs/core';
 import { RateLimitGuard } from './common/guards/rate-limit.guard';
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import { HealthModule } from './modules/health/health.module';
@@ -47,6 +47,13 @@ import { HealthModule } from './modules/health/health.module';
     }),
     HealthModule,
     RedirectModule,
+    RouterModule.register([
+      { path: 'api/v1', module: AuthModule },
+      { path: 'api/v1', module: LinksModule },
+      { path: 'api/v1', module: AnalyticsModule },
+      { path: 'api/v1', module: QrModule },
+      { path: 'api/v1', module: UserModule },
+    ]),
   ],
   providers: [
     {
