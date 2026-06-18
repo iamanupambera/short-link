@@ -356,11 +356,13 @@ describe('AuthService', () => {
   describe('updateUserDetails', () => {
     it('should update user details', async () => {
       mockAuthRepository.update.mockResolvedValue({ affected: 1 });
+      mockAuthRepository.findOne.mockResolvedValue({ id: 1, name: 'New Name' });
       const result = await service.updateUserDetails(
         { userId: 1, email: 'test@test.com', role: UserRole.USER, sessionKey: 'key' },
         { name: 'New Name', location: '' },
       );
       expect(result.statusCode).toBe(201);
+      expect(result.response).toEqual({ id: 1, name: 'New Name' });
     });
   });
 
