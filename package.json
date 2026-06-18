@@ -26,7 +26,7 @@
     "migration:revert": "npm run build && npm run typeorm -d ./dist/database/dataSource.service.js migration:revert",
     "seed:create": "ts-node ./node_modules/typeorm-extension/bin/cli.cjs seed:create -n ./src/database/seeds/$model_name",
     "seed:run": "npm run build && ts-node ./node_modules/typeorm-extension/bin/cli.cjs -d ./dist/database/dataSource.service.js seed:run",
-    "prepare": "husky"
+    "prepare": "node -e \"if (require('fs').existsSync('node_modules/husky')) { require('child_process').execSync('husky', { stdio: 'inherit' }) }\""
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",
